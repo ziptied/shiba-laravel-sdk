@@ -9,6 +9,7 @@ use JsonException;
 use Symfony\Component\Mailer\Exception\TransportException;
 use Symfony\Component\Mailer\SentMessage;
 use Symfony\Component\Mime\Address;
+use Symfony\Component\Mime\Email;
 use Symfony\Component\Mime\Header\HeaderInterface;
 use Symfony\Component\Mime\Message;
 use Symfony\Component\Mime\MessageConverter;
@@ -26,6 +27,7 @@ final class ShibaMessagePayload
 
         $email = MessageConverter::toEmail($message);
         $from = $email->getFrom();
+        $attachments = $email->getAttachments();
 
         return new SendPayload(
             from: $from === [] ? null : $from[0]->getAddress(),
@@ -35,9 +37,9 @@ final class ShibaMessagePayload
             replyTo: $this->replyTo($email->getReplyTo()),
             subject: $email->getSubject(),
             text: $email->getTextBody(),
-            html: $email->getHtmlBody(),
+            html: $this->html($email, $attachments),
             headers: $this->headers($email->getHeaders()->all()),
-            attachments: $this->attachments($email->getAttachments()),
+            attachments: $this->attachments($attachments),
             uniqueArgs: $this->uniqueArgs($email->getHeaders()->all()),
         );
     }
@@ -127,15 +129,69 @@ final class ShibaMessagePayload
     }
 
     /**
+     * Replace filename-based cid references with the generated MIME Content-ID.
+     *
+     * Symfony performs this replacement while rendering MIME. The REST payload
+     * is built before rendering, so it must retain the same relationship.
+     *
      * @param  list<DataPart>  $attachments
-     * @return list<array{filename: string, content_type: string, content: string}>
+     */
+    private function html(Email $email, array $attachments): ?string
+    {
+        $html = $email->getHtmlBody();
+
+        if (is_resource($html)) {
+            $html = stream_get_contents($html) ?: '';
+        }
+
+        if (! is_string($html) || $html === '') {
+            return $html;
+        }
+
+        preg_match_all('/cid:([^"\'\s>]+)/i', $html, $matches);
+        $names = array_unique($matches[1]);
+        $replacements = [];
+
+        foreach ($attachments as $attachment) {
+            foreach ($names as $name) {
+                if ($name !== $attachment->getName() &&
+                    (! $attachment->hasContentId() || $name !== $attachment->getContentId())) {
+                    continue;
+                }
+
+                $contentId = $attachment->getContentId();
+                $replacements['cid:'.$name] = 'cid:'.$contentId;
+                $attachment->setName($attachment->getName() ?? $contentId)->asInline();
+
+                break;
+            }
+        }
+
+        return strtr($html, $replacements);
+    }
+
+    /**
+     * @param  list<DataPart>  $attachments
+     * @return list<array{filename: string, content_type: string, content: string, content_id?: string, disposition?: string}>
      */
     private function attachments(array $attachments): array
     {
-        return array_map(static fn (DataPart $attachment): array => [
-            'filename' => $attachment->getFilename() ?: 'attachment',
-            'content_type' => $attachment->getMediaType().'/'.$attachment->getMediaSubtype(),
-            'content' => base64_encode($attachment->getBody()),
-        ], $attachments);
+        return array_map(static function (DataPart $attachment): array {
+            $disposition = $attachment->getDisposition();
+            $contentId = $attachment->hasContentId() || $disposition === 'inline'
+                ? $attachment->getContentId()
+                : null;
+
+            $metadata = $disposition === 'inline' || $contentId !== null
+                ? ['content_id' => $contentId, 'disposition' => $disposition]
+                : [];
+
+            return array_filter([
+                'filename' => $attachment->getFilename() ?: 'attachment',
+                'content_type' => $attachment->getMediaType().'/'.$attachment->getMediaSubtype(),
+                'content' => base64_encode($attachment->getBody()),
+                ...$metadata,
+            ], static fn (mixed $value): bool => $value !== null && $value !== '');
+        }, $attachments);
     }
 }

@@ -11,7 +11,7 @@ final class SendPayload extends ApiData
      * @param  list<string>  $cc
      * @param  list<string>  $bcc
      * @param  array<string, string>  $headers
-     * @param  list<array{filename: string, content_type: string, content: string}>  $attachments
+     * @param  list<array{filename: string, content_type: string, content: string, content_id?: string, disposition?: string}>  $attachments
      * @param  array<string, mixed>  $uniqueArgs
      */
     public function __construct(
