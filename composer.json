@@ -19,7 +19,7 @@
         "illuminate/routing": "^13.0",
         "illuminate/support": "^13.0",
         "saloonphp/saloon": "^4.0",
-        "yorcreative/laravel-argonaut-dto": "dev-laravel-13-support"
+        "yorcreative/laravel-argonaut-dto": "^1.5"
     },
     "require-dev": {
         "laravel/pint": "^1.0",
@@ -55,12 +55,6 @@
             "pestphp/pest-plugin": true
         }
     },
-    "repositories": [
-        {
-            "type": "vcs",
-            "url": "https://github.com/ziptied/Laravel-Argonaut-DTO"
-        }
-    ],
     "extra": {
         "laravel": {
             "providers": [

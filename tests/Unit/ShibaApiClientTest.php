@@ -189,6 +189,66 @@ it('serializes DTOs without dropping zero or false values', function (): void {
         ->and($cluster->toApiArray()['sending_ready'])->toBeFalse();
 });
 
+it('sends an application email payload without the generic send envelope', function (): void {
+    config(['shiba.api_key' => 'shiba-key']);
+    $mock = MockClient::global([MockResponse::make([
+        'queued' => true,
+        'message_id' => 'message-123',
+    ], 202)]);
+
+    $response = (new ShibaClient)->sendEmail(new SendPayload(
+        'from@example.com',
+        ['to@example.com'],
+        tenant: 'tenant-123',
+        idempotencyKey: 'reply-123',
+    ));
+
+    $request = $mock->getLastResponse()->getPsrRequest();
+    $body = json_decode((string) $request->getBody(), true, 512, JSON_THROW_ON_ERROR);
+
+    expect((string) $request->getUri())->toBe('https://app.postshiba.com/api/v1/emails')
+        ->and($request->getHeaderLine('Idempotency-Key'))->toBe('reply-123')
+        ->and($body)->toBe([
+            'from' => 'from@example.com',
+            'to' => ['to@example.com'],
+            'tenant' => 'tenant-123',
+        ])
+        ->and($body)->not->toHaveKey('send')
+        ->and($response->messageId)->toBe('message-123');
+});
+
+it('maps threaded inbound messages without losing the provider payload', function (): void {
+    config(['shiba.api_key' => 'shiba-key']);
+    MockClient::global([MockResponse::make([
+        'inbound_message' => [
+            'id' => 'message-123',
+            'inbox_id' => 'inbox-123',
+            'tenant_id' => 'tenant-123',
+            'to' => ['support@example.com'],
+            'from' => 'customer@example.com',
+            'subject' => 'Question',
+            'text' => 'Hello',
+            'thread_id' => 'thread-123',
+            'message_id' => '<message-123@example.com>',
+            'in_reply_to' => '<parent@example.com>',
+            'references' => ['<root@example.com>', '<parent@example.com>'],
+            'headers' => ['Message-ID' => '<message-123@example.com>'],
+        ],
+    ])]);
+
+    $message = (new ShibaClient)->inboundMessage('inbox-123', 'message-123');
+
+    expect($message->id)->toBe('message-123')
+        ->and($message->inboxId)->toBe('inbox-123')
+        ->and($message->tenantId)->toBe('tenant-123')
+        ->and($message->to)->toBe(['support@example.com'])
+        ->and($message->threadId)->toBe('thread-123')
+        ->and($message->messageId)->toBe('<message-123@example.com>')
+        ->and($message->inReplyTo)->toBe('<parent@example.com>')
+        ->and($message->references)->toBe(['<root@example.com>', '<parent@example.com>'])
+        ->and($message->rawPayload['thread_id'])->toBe('thread-123');
+});
+
 it('preserves every documented REST error code', function (?string $error, int $status): void {
     MockClient::global([MockResponse::make($error === null ? [] : ['error' => $error], $status)]);
 

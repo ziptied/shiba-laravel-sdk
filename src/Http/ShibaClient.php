@@ -56,10 +56,23 @@ final class ShibaClient
                 Method::POST,
                 $this->configuredSendEndpoint(),
                 ['send' => $payload->toApiArray()],
-                headers: $payload->idempotencyKey === null ? [] : ['Idempotency-Key' => $payload->idempotencyKey],
+                headers: $this->idempotencyHeaders($payload),
             ),
             SendResponse::class,
             'send',
+        );
+    }
+
+    public function sendEmail(SendPayload $payload): SendResponse
+    {
+        return $this->resource(
+            $this->request(
+                Method::POST,
+                (string) config('shiba.email_endpoint', '/api/v1/emails'),
+                $payload->toApiArray(),
+                headers: $this->idempotencyHeaders($payload),
+            ),
+            SendResponse::class,
         );
     }
 
@@ -346,6 +359,12 @@ final class ShibaClient
         }
 
         return $endpoint;
+    }
+
+    /** @return array<string, string> */
+    private function idempotencyHeaders(SendPayload $payload): array
+    {
+        return $payload->idempotencyKey === null ? [] : ['Idempotency-Key' => $payload->idempotencyKey];
     }
 
     private function teamPath(int|string $teamId, string $suffix): string

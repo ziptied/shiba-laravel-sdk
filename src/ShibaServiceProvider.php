@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Bentonow\ShibaLaravel;
 
+use Bentonow\ShibaLaravel\Http\InboundWebhook;
 use Bentonow\ShibaLaravel\Http\ShibaClient;
+use Bentonow\ShibaLaravel\Http\WebhookSignature;
 use Bentonow\ShibaLaravel\Mail\ShibaMessagePayload;
 use Bentonow\ShibaLaravel\Mail\ShibaTransport;
 use Bentonow\ShibaLaravel\Queue\ReleaseRateLimitedJob;
@@ -26,6 +28,8 @@ final class ShibaServiceProvider extends ServiceProvider
 
         $this->app->singleton(ShibaClient::class);
         $this->app->singleton(ShibaMessagePayload::class);
+        $this->app->singleton(WebhookSignature::class);
+        $this->app->singleton(InboundWebhook::class);
     }
 
     public function boot(Dispatcher $events): void
@@ -43,6 +47,8 @@ final class ShibaServiceProvider extends ServiceProvider
 
         $events->listen(JobExceptionOccurred::class, ReleaseRateLimitedJob::class);
 
-        $this->loadRoutesFrom(__DIR__.'/../routes/webhooks.php');
+        if ((bool) config('shiba.webhook.enabled', true)) {
+            $this->loadRoutesFrom(__DIR__.'/../routes/webhooks.php');
+        }
     }
 }
