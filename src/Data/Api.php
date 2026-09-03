@@ -656,9 +656,19 @@ final class HttpInjectAttachment extends ApiData
 
     public bool $base64 = true;
 
-    public function __construct(string $fileName, string $contentType, string $data, bool $base64 = true)
-    {
-        parent::__construct(compact('fileName', 'contentType', 'data', 'base64'));
+    public ?string $contentId = null;
+
+    public ?string $disposition = null;
+
+    public function __construct(
+        string $fileName,
+        string $contentType,
+        string $data,
+        bool $base64 = true,
+        ?string $contentId = null,
+        ?string $disposition = null,
+    ) {
+        parent::__construct(compact('fileName', 'contentType', 'data', 'base64', 'contentId', 'disposition'));
     }
 }
 

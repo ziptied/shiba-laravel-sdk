@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Mail;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Mailer\Envelope;
+use Symfony\Component\Mailer\SentMessage;
 use Symfony\Component\Mime\Address;
 use Symfony\Component\Mime\Email;
 
@@ -71,6 +72,27 @@ it('posts a Laravel mail message to PostShiba', function (): void {
             'content' => base64_encode('hello'),
         ]])
         ->and($body['send']['unique_args'])->toBe(['campaign_id' => 'cmp_123']);
+});
+
+it('preserves CID and inline disposition for embedded MIME parts', function (): void {
+    $email = (new Email)
+        ->from('sender@example.com')
+        ->to('recipient@example.com')
+        ->subject('Inline')
+        ->html('<img src="cid:logo.png">')
+        ->embed('hello', 'logo.png', 'text/plain');
+
+    $payload = (new ShibaMessagePayload)->fromSentMessage(new SentMessage(
+        $email,
+        new Envelope(new Address('sender@example.com'), [new Address('recipient@example.com')]),
+    ));
+
+    expect($payload->attachments)->toHaveCount(1)
+        ->and($payload->attachments[0]['disposition'])->toBe('inline')
+        ->and($payload->attachments[0]['content_id'])->toContain('@')
+        ->and($payload->html)->toContain('cid:'.$payload->attachments[0]['content_id'])
+        ->and($payload->html)->not->toContain('cid:logo.png')
+        ->and($payload->attachments[0]['content'])->toBe(base64_encode('hello'));
 });
 
 it('registers shiba as a Laravel mailer', function (): void {
