@@ -34,7 +34,10 @@ afterEach(function (): void {
 
 it('maps the documented PostShiba API to typed DTOs and requests', function (): void {
     $responses = array_fill(0, 48, MockResponse::make([], 200));
-    $responses[32] = MockResponse::make('attachment', 200, ['Content-Type' => 'text/plain']);
+    $responses[32] = MockResponse::make('attachment', 200, [
+        'Content-Type' => 'text/plain',
+        'Content-Disposition' => 'attachment; filename="note.txt"',
+    ]);
     $mock = MockClient::global($responses);
     $client = new ShibaClient;
 
@@ -163,6 +166,8 @@ it('maps the documented PostShiba API to typed DTOs and requests', function (): 
         ->and($injectBody['content']['attachments'][0]['file_name'])->toBe('note.txt')
         ->and($injectBody['content']['headers']['X-Capsule-Unique-Args'])->toBe('{"campaign_id":"cmp_123"}')
         ->and($attachment->content)->toBe('attachment')
+        ->and($attachment->filename)->toBe('note.txt')
+        ->and($attachment->contentType)->toBe('text/plain')
         ->and($sendBody['send']['attachments'])->not->toBeEmpty()
         ->and($requests[1]->getHeaderLine('Idempotency-Key'))->toBe('send-123')
         ->and($sendBody['send']['sandbox'])->toBeTrue()

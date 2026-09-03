@@ -225,11 +225,12 @@ final class ShibaClient
         }
 
         $response = $this->request(Method::GET, $this->inboxMessagesPath($inboxId).'/'.$this->id($messageId).'/attachments/'.$index);
+        $psr = $response->getPsrResponse();
 
         return new AttachmentDownload([
             'content' => $response->body(),
-            'filename' => $response->getPsrResponse()->getHeaderLine('Content-Disposition') ?: null,
-            'content_type' => $response->getPsrResponse()->getHeaderLine('Content-Type') ?: null,
+            'filename' => $this->filenameFromDisposition($psr->getHeaderLine('Content-Disposition')),
+            'content_type' => $psr->getHeaderLine('Content-Type') ?: null,
         ]);
     }
 
@@ -360,6 +361,27 @@ final class ShibaClient
     private function id(int|string $id): string
     {
         return rawurlencode((string) $id);
+    }
+
+    private function filenameFromDisposition(string $disposition): ?string
+    {
+        if ($disposition === '') {
+            return null;
+        }
+
+        if (preg_match("/filename\\*=[^']*''([^;]+)/i", $disposition, $matches) === 1) {
+            return rawurldecode(trim($matches[1], " \t\""));
+        }
+
+        if (preg_match('/filename="((?:\\\\.|[^"\\\\])*)"/i', $disposition, $matches) === 1) {
+            return stripcslashes($matches[1]);
+        }
+
+        if (preg_match('/filename=([^;\s]+)/i', $disposition, $matches) === 1) {
+            return trim($matches[1], " \t'\"");
+        }
+
+        return null;
     }
 
     /** @param array<string, mixed> $body @param array<string, mixed> $query @param array<string, string> $headers */
