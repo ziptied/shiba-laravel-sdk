@@ -5,7 +5,7 @@ Laravel 13 integration for PostShiba:
 - a Laravel mail transport backed by the PostShiba REST API;
 - a typed REST client for PostShiba management and sending APIs;
 - HTTP inject support with SMTP credentials; and
-- a signed webhook endpoint that dispatches typed events.
+- signed webhook verification, inbound webhook parsing, and typed events.
 
 ## Requirements
 
@@ -40,14 +40,16 @@ Available environment variables:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `SHIBA_API_KEY` | — | PostShiba bearer token for the REST API and mail transport |
-| `SHIBA_BASE_URL` | `https://app.postshiba.com` | REST API base URL |
+| `SHIBA_API_KEY` | `POSTSHIBA_API_KEY` | PostShiba bearer token for the REST API and mail transport |
+| `SHIBA_BASE_URL` | `POSTSHIBA_BASE_URL`, then `https://app.postshiba.com` | REST API base URL |
 | `SHIBA_ENDPOINT` | `/api/v1/teams/{team_id}/clusters/{cluster_id}/sends` | Mail and `send()` endpoint |
+| `SHIBA_EMAIL_ENDPOINT` | `/api/v1/emails` | Application email endpoint used by `sendEmail()` |
 | `SHIBA_TEAM_ID` | — | Team ID substituted into the default send endpoint |
 | `SHIBA_CLUSTER_ID` | — | Cluster ID substituted into the default send endpoint |
 | `SHIBA_RETRY_DELAY` | `3600` | Queue release delay after a throttled send, in seconds |
 | `SHIBA_INJECT_BASE_URL` | `https://inject.postshiba.com` | HTTP inject base URL |
 | `SHIBA_INJECT_ENDPOINT` | `/api/inject/v1` | HTTP inject endpoint |
+| `SHIBA_WEBHOOK_ENABLED` | `true` | Register the package's webhook route |
 | `SHIBA_WEBHOOK_PATH` | `/shiba/webhooks` | Registered webhook route |
 | `SHIBA_WEBHOOK_SECRET` | — | Secret used to verify webhook signatures |
 | `SHIBA_WEBHOOK_TIMESTAMP_TOLERANCE` | `300` | Accepted webhook timestamp age, in seconds |
@@ -66,7 +68,9 @@ including:
 - from, to, cc, bcc, reply-to, subject, text, and HTML;
 - custom headers, excluding MIME and address headers;
 - `X-Capsule-Unique-Args` as the `unique_args` object; and
-- attachments as base64-encoded `send.attachments` entries.
+- attachments as base64-encoded `send.attachments` entries; and
+- inline attachments, including `cid:` replacement in HTML plus `content_id`
+  and `disposition` metadata.
 
 Laravel mail can then be used normally:
 
@@ -110,6 +114,20 @@ $response->messageId;
 `send()` uses the configured team/cluster endpoint and sends an
 `Idempotency-Key` header when `idempotencyKey` is provided.
 
+For the application email endpoint, use `sendEmail()`. It sends the payload at
+the JSON root instead of wrapping it in `send`:
+
+```php
+use Bentonow\ShibaLaravel\Data\SendPayload;
+use Bentonow\ShibaLaravel\Http\ShibaClient;
+
+$response = app(ShibaClient::class)->sendEmail(new SendPayload(
+    from: 'sender@example.com',
+    to: ['recipient@example.com'],
+    tenant: 'tenant-123',
+));
+```
+
 ### Supported client operations
 
 `ShibaClient` currently provides:
@@ -117,12 +135,12 @@ $response->messageId;
 | Area | Operations |
 | --- | --- |
 | Identity | `whoAmI()` |
-| Sending | `send()` |
+| Sending | `send()` and `sendEmail()` |
 | Clusters | list, get, create, update, suspend, resume, delete |
 | Sending domains | list, get, create, verify, suspend, resume, make primary, can-send check/report, delete |
 | Tenants | list, get, create, suspend, resume, delete |
 | Inboxes | list, get, create, verify, delete |
-| Inbound mail | list/get inbound messages and download attachments |
+| Inbound mail | list/get messages, threaded fields, raw provider payloads, and attachment downloads |
 | Message events | list with filters and get by ID |
 | SMTP credentials | create and delete |
 | Webhook endpoints | list, get, and create |
@@ -179,8 +197,9 @@ arrays such as `['email' => 'recipient@example.com']`.
 
 ## Webhooks
 
-The package registers `POST /shiba/webhooks` automatically, or the path set by
-`SHIBA_WEBHOOK_PATH`. Configure the signing secret:
+When `SHIBA_WEBHOOK_ENABLED` is enabled, the package registers
+`POST /shiba/webhooks` automatically, or the path set by `SHIBA_WEBHOOK_PATH`.
+Configure the signing secret:
 
 ```dotenv
 SHIBA_WEBHOOK_SECRET=your-webhook-secret
@@ -207,6 +226,26 @@ Event::listen(WebhookReceived::class, function (WebhookReceived $event): void {
 ```
 
 Invalid signatures return `403`; invalid webhook JSON or events return `422`.
+
+### Inbound webhooks
+
+Use the container-resolvable `InboundWebhook` parser for PostShiba inbound
+message webhooks. It verifies the same signature headers, requires `id` and
+`inbox_id`, and returns an `InboundMessage` without dispatching an event:
+
+```php
+use Bentonow\ShibaLaravel\Http\InboundWebhook;
+
+$message = app(InboundWebhook::class)->parse(request(), $inboxSecret);
+
+$message->threadId;
+$message->references;
+$message->rawPayload;
+```
+
+Inbound messages support provider string or integer IDs, multiple recipients
+and references, threading fields, and the original payload in `rawPayload`.
+`WebhookSignature` is also container-resolvable for custom webhook controllers.
 
 ## Errors and throttling
 

@@ -107,7 +107,7 @@ final class SendResponse extends ApiData
 
 final class Tenant extends ApiData
 {
-    public ?int $id = null;
+    public int|string|null $id = null;
 
     public ?string $name = null;
 
@@ -309,7 +309,7 @@ final class CanISendThisReport extends ApiData
 
 final class Inbox extends ApiData
 {
-    public ?int $id = null;
+    public int|string|null $id = null;
 
     public ?string $name = null;
 
@@ -370,11 +370,14 @@ final class InboundMessage extends ApiData
 {
     protected array $casts = ['attachments' => [InboundAttachment::class]];
 
-    public ?int $id = null;
+    public int|string|null $id = null;
 
-    public ?int $inboxId = null;
+    public int|string|null $inboxId = null;
 
-    public ?string $to = null;
+    public int|string|null $tenantId = null;
+
+    /** @var string|list<string>|null */
+    public string|array|null $to = null;
 
     public ?string $from = null;
 
@@ -383,6 +386,15 @@ final class InboundMessage extends ApiData
     public ?string $text = null;
 
     public ?string $html = null;
+
+    public ?string $threadId = null;
+
+    public ?string $messageId = null;
+
+    public ?string $inReplyTo = null;
+
+    /** @var string|list<string>|null */
+    public string|array|null $references = null;
 
     /** @var array<string, mixed> */
     public array $headers = [];
@@ -399,6 +411,9 @@ final class InboundMessage extends ApiData
 
     public ?string $raw = null;
 
+    /** @var array<string, mixed> */
+    public array $rawPayload = [];
+
     /** @param array<string, mixed> $attributes */
     public function __construct(array $attributes = [])
     {
@@ -409,6 +424,13 @@ final class InboundMessage extends ApiData
 
         $this->headers = is_array($headers) ? $headers : [];
         $this->envelope = is_array($envelope) ? $envelope : [];
+        $this->rawPayload = $attributes;
+    }
+
+    /** @param array<string, mixed> $attributes */
+    public static function fromArray(array $attributes): self
+    {
+        return new self($attributes);
     }
 }
 
